@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="icon"
+      href="{{ url_for('static', filename='images/favicon.ico') }}"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.156.0/build/three.module.js"
+        }
+      }
+    </script>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+    <title>Triform</title>
+  </head>
+
+  <body>
+    <header>
+      <img
+        src="{{ url_for('static', filename='images/logo_darkmode.png') }}"
+        alt="Logo Triform"
+      />
+    </header>
+    <main>
+      <section id="generate">
+        <h1>Crie modelos 3D a partir de imagens com facilidade</h1>
+        <div class="options-container">
+          <div class="checkbox-group">
+            <div class="option-group">
+              <label>
+                <input type="checkbox" name="sem_fundo" id="sem_fundo" />
+                Remover fundo
+              </label>
+            </div>
+
+            <div class="option-group">
+              <label>
+                <input type="checkbox" id="use_preprocess" checked />
+                Aplicar pré-processamento
+                <div class="info-wrapper">
+                  <img
+                    src="{{ url_for('static', filename='images/icon_information.png') }}"
+                    class="info-icon"
+                    alt="Informação"
+                  />
+                  <div class="tooltip">
+                    Aplica melhorias automáticas na imagem: redimensionamento, balanço de branco, suavização e ajuste de contraste para otimizar a reconstrução 3D.
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+          <div class="option-group">
+            <label for="depth">
+              Nível de qualidade: <strong id="depth-value">10</strong>
+            </label>
+            <input
+              type="range"
+              name="depth"
+              id="depth"
+              min="7"
+              max="12"
+              value="10"
+            />
+            <div class="range-labels">
+              <span>7 (Poucos polígonos)</span>
+              <span>12 (Muitos polígonos)</span>
+            </div>
+          </div>
+        </div>
+        <form action="/upload" method="post" enctype="multipart/form-data">
+          <div class="upload-card">
+            <label for="file" class="file-input">
+              <input
+                type="file"
+                name="file"
+                id="file"
+                multiple="multiple"
+                accept=".png,.jpg,.jpeg,.webp,.ply,.obj,.stl,.glb,.gltf"
+              />
+              <div class="drop-zone" id="drop-zone">
+                <div class="placeholder">
+                  <p>
+                    Arraste até 100 imagens aqui
+                    <span>ou clique para selecionar - JPG, PNG, WEBP</span>
+                  </p>
+                  <div class="divider">
+                    <span>OU</span>
+                  </div>
+                  <p>
+                    Arraste um arquivo 3D aqui
+                    <span>ou clique para selecionar - PLY, OBJ, STL, GLB</span>
+                  </p>
+                </div>
+              </div>
+            </label>
+          </div>
+          <input class="button-disabled" type="submit" value="GERAR" />
+        </form>
+        <section id="tutorial-section">
+          <h1>Como gerar um modelo 3D?</h1>
+          <div class="tutorial-steps">
+            <div class="step">
+              <div class="step-header">
+                <span class="badge">Passo 1</span>
+                <h3>Selecione as imagens ou importe um modelo</h3>
+              </div>
+              <p>
+                Selecione imagens nos formatos JPG, PNG ou WEBP, ou importe um modelo 3D (PLY, OBJ, STL, GLB).<br/>
+                Para melhores resultados, utilize imagens com boa iluminação, contornos nítidos e sem sobreposição de objetos.
+              </p>
+            </div>
+            <div class="step">
+              <div class="step-header">
+                <span class="badge">Passo 2</span>
+                <h3>Gere automaticamente o modelo</h3>
+              </div>
+              <p>
+                Após o envio, o sistema inicia automaticamente o processamento.<br/>
+                Um indicador de progresso será exibido enquanto o modelo 3D é gerado, sem necessidade de interação adicional.
+              </p>
+            </div>
+            <div class="step">
+              <div class="step-header">
+                <span class="badge">Passo 3</span>
+                <h3>Visualize e baixe o modelo</h3>
+              </div>
+              <p>
+                Ao final do processamento, o modelo 3D é exibido na interface.<br/>
+                Você pode visualizar, analisar a geometria e fazer o download para uso em outros softwares.
+              </p>
+            </div>
+          </div>
+        </section>
+      </section>
+      <section id="progress-section" style="display: none">
+        <h1>Gerando modelo 3D</h1>
+        <div id="progress-viewer">
+          <div id="progress-text">Iniciando...</div>
+          <div id="progress-bar-container">
+            <div id="progress-bar"></div>
+          </div>
+        </div>
+        <button id="cancel-btn">CANCELAR</button>
+      </section>
+      <section id="viewer-section" style="display: none">
+        <h1>Visualização do Modelo 3D</h1>
+        <div class="options-container">
+          <div class="option-group">
+            <label>
+              <input type="checkbox" id="whiteBackground" />
+              Fundo branco
+            </label>
+          </div>
+          <div class="option-group">
+            <label>
+              <input type="checkbox" id="toggleColor" checked />
+              Mostrar cores
+            </label>
+          </div>
+          <div class="option-group">
+            <label>
+              <input type="checkbox" id="invertNormals" />
+              Inverter normais
+            </label>
+          </div>
+        </div>
+        <div class="viewer-container">
+          <div class="return-menu">
+            <img
+              id="return-btn"
+              src="{{ url_for('static', filename='images/icon_return.png') }}"
+            />
+          </div>
+          <div class="download-menu">
+            <img
+              id="download-btn"
+              src="{{ url_for('static', filename='images/icon_download.png') }}"
+            />
+            <div class="download-options" id="download-options">
+              <button data-format="obj">OBJ</button>
+              <button data-format="ply">PLY</button>
+              <button data-format="stl">STL</button>
+              <button data-format="glb">GLB</button>
+            </div>
+          </div>
+          <canvas id="viewer-canvas"></canvas>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <p id="about-authors">
+        &copy; 2026 Triform — Desenvolvido por Cláudio Dias e Daniel Camargo
+        <br />
+        Trabalho de Conclusão de Curso em Ciência da Computação. <br />
+        Universidade Presbiteriana Mackenzie.
+      </p>
+    </footer>
+    <dialog id="confirm-modal" class="modal-overlay" style="display: none">
+      <div class="modal-box">
+        <h2 id="modal-title">Confirmação</h2>
+        <p id="modal-text"></p>
+        <div class="modal-actions">
+          <button id="confirm-back" class="btn-danger">CONFIRMAR</button>
+          <button id="cancel-back" class="btn-secondary">CANCELAR</button>
+        </div>
+      </div>
+    </dialog>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script
+      type="module"
+      src="{{ url_for('static', filename='js/viewer.js') }}"
+    ></script>
+  </body>
+</html>
