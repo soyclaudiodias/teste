@@ -7,6 +7,7 @@ import uuid
 app = Flask(__name__)
 
 jobs = {}
+latest_job_id = None
 
 VALID_STRATEGIES = {"com_fundo", "sem_fundo"}
 
@@ -23,6 +24,8 @@ def serve_models(filename):
 
 @app.route("/upload", methods=["POST"])
 def upload():
+    global latest_job_id
+
     use_preprocess = request.form.get("use_preprocess", "true") == "true"
     uploaded_files = request.files.getlist("file")
 
@@ -40,8 +43,10 @@ def upload():
     invert_normals = request.form.get("invertNormals", "false") == "true"
 
     valid_files = []
+
     for file in uploaded_files:
         filename = getattr(file, "filename", "").strip()
+
         if filename:
             valid_files.append(file)
 
@@ -52,11 +57,14 @@ def upload():
         }), 400
 
     job_id = str(uuid.uuid4())
+    latest_job_id = job_id
 
     job_dir = Path("jobs") / job_id
     colmap_dir = job_dir / "colmap"
+
     original_dir = colmap_dir / "images"
     processed_dir = colmap_dir / "images_processed"
+
     model_dir = Path("static") / "models" / job_id
 
     original_dir.mkdir(parents=True, exist_ok=True)
@@ -73,8 +81,11 @@ def upload():
 
     for file in valid_files:
         filename = file.filename.strip()
+
         original_path = original_dir / filename
+
         file.save(original_path)
+
         saved_filenames.append(filename)
 
     def is_cancelled():
@@ -85,6 +96,7 @@ def upload():
             total = len(saved_filenames)
 
             for i, filename in enumerate(saved_filenames, start=1):
+
                 if is_cancelled():
                     jobs[job_id]["stage"] = "idle"
                     return
@@ -182,7 +194,11 @@ def upload():
 
             jobs[job_id]["stage"] = "error"
 
-    pipeline_thread = threading.Thread(target=pipeline, daemon=True)
+    pipeline_thread = threading.Thread(
+        target=pipeline,
+        daemon=True
+    )
+
     pipeline_thread.start()
 
     return jsonify({
@@ -192,8 +208,21 @@ def upload():
     })
 
 
+@app.route("/status", methods=["GET"])
+def status_latest():
+
+    if not latest_job_id:
+        return jsonify({
+            "stage": "not_found",
+            "error": "Nenhum job iniciado."
+        }), 404
+
+    return status(latest_job_id)
+
+
 @app.route("/status/<job_id>", methods=["GET"])
 def status(job_id):
+
     job = jobs.get(job_id)
 
     if not job:
@@ -208,8 +237,20 @@ def status(job_id):
     })
 
 
+@app.route("/cancel", methods=["POST"])
+def cancel_latest():
+
+    if not latest_job_id:
+        return jsonify({
+            "status": "no_job"
+        }), 404
+
+    return cancel(latest_job_id)
+
+
 @app.route("/cancel/<job_id>", methods=["POST"])
 def cancel(job_id):
+
     job = jobs.get(job_id)
 
     if job:
@@ -217,8 +258,14 @@ def cancel(job_id):
         job["stage"] = "idle"
         job["error"] = "cancelled"
 
-    return jsonify({"status": "cancelled"})
+    return jsonify({
+        "status": "cancelled"
+    })
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True
+    )
