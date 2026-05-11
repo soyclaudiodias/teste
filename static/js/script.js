@@ -181,6 +181,35 @@ function resetUIToStart() {
   input.value = "";
 }
 
+input.addEventListener("change", () => {
+  const files = Array.from(input.files);
+
+  if (files.length === 0) return;
+
+  const onlyImages = files.every((file) => imageFormats.includes(file.type));
+
+  if (!onlyImages) {
+    alert("Selecione imagens JPG, PNG ou WEBP.");
+    input.value = "";
+    return;
+  }
+
+  files.forEach((file) => {
+    const fileID = `${file.name}-${file.size}`;
+
+    if (addedImages.has(fileID)) return;
+
+    addedImages.add(fileID);
+
+    selectedFiles.push({
+      id: fileID,
+      file: file,
+    });
+  });
+
+  input.value = "";
+});
+
 // ===== ENVIO =====
 if (form) {
   form.addEventListener("submit", async (e) => {
