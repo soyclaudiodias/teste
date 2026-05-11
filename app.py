@@ -218,3 +218,7 @@ def cancel(job_id):
         job["error"] = "cancelled"
 
     return jsonify({"status": "cancelled"})
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
