@@ -656,6 +656,9 @@ if (form) {
     hasError = false;
     setStageLabel("starting|0|1");
 
+    console.log("Arquivos selecionados:", selectedFiles);
+    console.log("FormData files:", formData.getAll("file"));
+
     try {
       const response = await fetch("/upload", {
         method: "POST",
