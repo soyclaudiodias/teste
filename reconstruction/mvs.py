@@ -45,6 +45,7 @@ def run_mvs(image_dir=None, colmap_path="colmap", cancel_check=None):
     options.num_samples = 10
     options.window_radius = 5
     options.filter = True
+    options.gpu_index = "0"
 
     pycolmap.patch_match_stereo(
         str(dense_dir),
