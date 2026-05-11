@@ -30,6 +30,10 @@ def upload():
     use_preprocess = request.form.get("use_preprocess", "true") == "true"
     uploaded_files = request.files.getlist("file")
 
+    print("request.files:", request.files)
+    print("uploaded_files:", uploaded_files)
+    print("quantidade:", len(uploaded_files))
+
     try:
         depth = int(request.form.get("depth", 9))
     except:
