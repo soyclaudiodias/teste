@@ -651,17 +651,24 @@ if (form) {
     hasError = false;
     setStageLabel("starting|0|1");
 
-    try {
-      const response = await fetch("/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Erro ao enviar imagens.");
-      }
+    const response = await fetch("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    
+    let data = {};
+    const contentType = response.headers.get("content-type") || "";
+    
+    if (contentType.includes("application/json")) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      throw new Error(text || "A rota /upload não retornou JSON.");
+    }
+    
+    if (!response.ok) {
+      throw new Error(data.error || "Erro ao enviar imagens.");
+    }
 
       await checkProgress();
       startProgressMonitoring();
