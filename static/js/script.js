@@ -11,6 +11,7 @@ const form = document.querySelector("#generate form");
 const addedImages = new Set();
 const selectedFiles = [];
 const maxImages = 100;
+let currentJobId = null;
 
 const imageFormats = ["image/png", "image/jpg", "image/jpeg", "image/webp"];
 const modelExtensions = [".ply", ".obj", ".stl", ".glb", ".gltf"];
@@ -670,6 +671,8 @@ if (form) {
       if (!response.ok) {
         throw new Error(data.error || "Erro ao enviar imagens.");
       }
+      
+      currentJobId = data.job_id;
 
       await checkProgress();
       startProgressMonitoring();
