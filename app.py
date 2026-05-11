@@ -1,16 +1,13 @@
 from flask import Flask, render_template, request, send_file, jsonify
 from reconstruction import preprocessing, sfm, mvs, meshing, export
 from pathlib import Path
-import shutil
 import threading
+import uuid
 
 app = Flask(__name__)
 
-# variáveis globais de estado
-current_stage = "idle"
-cancel_flag = False
-pipeline_thread = None
-current_error = ""
+jobs = {}
+
 VALID_STRATEGIES = {"com_fundo", "sem_fundo"}
 
 
@@ -26,16 +23,8 @@ def serve_models(filename):
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    global current_stage, cancel_flag, pipeline_thread, current_error
-
     use_preprocess = request.form.get("use_preprocess", "true") == "true"
-
     uploaded_files = request.files.getlist("file")
-
-    print("uploaded_files:", uploaded_files)
-    print("quantidade:", len(uploaded_files))
-    for i, file in enumerate(uploaded_files):
-        print(f"arquivo {i}: filename={repr(getattr(file, 'filename', None))}")
 
     try:
         depth = int(request.form.get("depth", 9))
@@ -43,24 +32,12 @@ def upload():
         depth = 9
 
     depth = max(7, min(12, depth))
-    strategy = request.form.get("strategy", "com_fundo")
 
+    strategy = request.form.get("strategy", "com_fundo")
     if strategy not in VALID_STRATEGIES:
         strategy = "com_fundo"
 
     invert_normals = request.form.get("invertNormals", "false") == "true"
-
-    original_dir = Path("colmap/images")
-    processed_dir = Path("colmap/images_processed")
-
-    if original_dir.exists():
-        shutil.rmtree(original_dir)
-
-    if processed_dir.exists():
-        shutil.rmtree(processed_dir)
-
-    processed_dir.mkdir(parents=True, exist_ok=True)
-    original_dir.mkdir(parents=True, exist_ok=True)
 
     valid_files = []
     for file in uploaded_files:
@@ -74,6 +51,24 @@ def upload():
             "error": "Nenhuma imagem válida foi enviada."
         }), 400
 
+    job_id = str(uuid.uuid4())
+
+    job_dir = Path("jobs") / job_id
+    colmap_dir = job_dir / "colmap"
+    original_dir = colmap_dir / "images"
+    processed_dir = colmap_dir / "images_processed"
+    model_dir = Path("static") / "models" / job_id
+
+    original_dir.mkdir(parents=True, exist_ok=True)
+    processed_dir.mkdir(parents=True, exist_ok=True)
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    jobs[job_id] = {
+        "stage": "preprocessamento",
+        "error": "",
+        "cancel": False
+    }
+
     saved_filenames = []
 
     for file in valid_files:
@@ -82,71 +77,86 @@ def upload():
         file.save(original_path)
         saved_filenames.append(filename)
 
-    cancel_flag = False
-    current_error = ""
-    current_stage = "preprocessamento"
+    def is_cancelled():
+        return jobs.get(job_id, {}).get("cancel", False)
 
     def pipeline():
-        global current_stage, cancel_flag, current_error
-
         try:
             total = len(saved_filenames)
 
             for i, filename in enumerate(saved_filenames, start=1):
-                if cancel_flag:
-                    print("Pipeline cancelado no preprocessamento")
-                    current_stage = "idle"
+                if is_cancelled():
+                    jobs[job_id]["stage"] = "idle"
                     return
 
-                current_stage = f"preprocessamento|{i}|{total}"
+                jobs[job_id]["stage"] = f"preprocessamento|{i}|{total}"
 
                 preprocessing.preprocess_image(
                     input_path=str(original_dir / filename),
                     output_base_dir=str(processed_dir),
                     strategy=strategy,
-                    use_preprocess=use_preprocess
+                    use_preprocess=use_preprocess,
+                    cancel_check=is_cancelled
                 )
 
             sfm_input_dir = processed_dir / strategy
 
-            if cancel_flag:
-                print("Pipeline cancelado antes do SfM")
-                current_stage = "idle"
+            if is_cancelled():
+                jobs[job_id]["stage"] = "idle"
                 return
 
-            current_stage = "sfm_features"
-            sfm.run_sfm(str(sfm_input_dir))
+            jobs[job_id]["stage"] = "sfm_features"
 
-            if cancel_flag:
-                print("Pipeline cancelado antes do MVS")
-                current_stage = "idle"
+            sfm.run_sfm(
+                image_dir=str(sfm_input_dir),
+                colmap_path=colmap_dir,
+                cancel_check=is_cancelled
+            )
+
+            if is_cancelled():
+                jobs[job_id]["stage"] = "idle"
                 return
 
-            current_stage = "mvs_depth"
-            mvs.run_mvs(str(sfm_input_dir))
+            jobs[job_id]["stage"] = "mvs_depth"
 
-            if cancel_flag:
-                print("Pipeline cancelado antes da malha")
-                current_stage = "idle"
+            mvs.run_mvs(
+                image_dir=str(sfm_input_dir),
+                colmap_path=colmap_dir,
+                cancel_check=is_cancelled
+            )
+
+            if is_cancelled():
+                jobs[job_id]["stage"] = "idle"
                 return
 
-            current_stage = "mesh_loading"
-            meshing.generate_mesh(depth=depth, invert_normals=invert_normals)
-            print(f"Depth selecionado: {depth}")
+            jobs[job_id]["stage"] = "mesh_loading"
 
-            if cancel_flag:
-                print("Pipeline cancelado antes da exportação")
-                current_stage = "idle"
+            meshing.generate_mesh(
+                depth=depth,
+                invert_normals=invert_normals,
+                colmap_path=colmap_dir,
+                output_path=model_dir / "mesh.ply",
+                cancel_check=is_cancelled
+            )
+
+            if is_cancelled():
+                jobs[job_id]["stage"] = "idle"
                 return
 
-            current_stage = "exporting"
-            export.export_mesh()
+            jobs[job_id]["stage"] = "exporting"
 
-            current_stage = "done"
-            print("Pipeline finalizado")
+            export.export_mesh(
+                input_path=model_dir / "mesh.ply",
+                output_dir=model_dir
+            )
+
+            jobs[job_id]["stage"] = "done"
 
         except Exception as e:
             print("Erro no pipeline:", e)
+
+            stage = jobs[job_id]["stage"]
+            stage_key = stage.split("|")[0]
 
             error_messages = {
                 "preprocessamento": "Erro durante o pré-processamento das imagens.",
@@ -165,36 +175,46 @@ def upload():
                 "exporting": "Erro ao exportar o modelo 3D.",
             }
 
-            stage_key = current_stage.split("|")[0]
-
-            current_error = error_messages.get(
+            jobs[job_id]["error"] = error_messages.get(
                 stage_key,
-                "Ocorreu um erro inesperado durante o processamento.",
+                "Ocorreu um erro inesperado durante o processamento."
             )
 
-            current_stage = "error"
+            jobs[job_id]["stage"] = "error"
 
     pipeline_thread = threading.Thread(target=pipeline, daemon=True)
     pipeline_thread.start()
 
-    return jsonify({"status": "ok"})
-
-
-@app.route("/status", methods=["GET"])
-def status():
-    global current_stage, current_error
     return jsonify({
-        "stage": current_stage,
-        "error": current_error
+        "status": "ok",
+        "job_id": job_id,
+        "model_url": f"/models/{job_id}/mesh.ply"
     })
 
 
-@app.route("/cancel", methods=["POST"])
-def cancel():
-    global cancel_flag, current_stage, current_error
+@app.route("/status/<job_id>", methods=["GET"])
+def status(job_id):
+    job = jobs.get(job_id)
 
-    cancel_flag = True
-    current_stage = "idle"
-    current_error = "cancelled"
+    if not job:
+        return jsonify({
+            "stage": "not_found",
+            "error": "Job não encontrado."
+        }), 404
+
+    return jsonify({
+        "stage": job["stage"],
+        "error": job["error"]
+    })
+
+
+@app.route("/cancel/<job_id>", methods=["POST"])
+def cancel(job_id):
+    job = jobs.get(job_id)
+
+    if job:
+        job["cancel"] = True
+        job["stage"] = "idle"
+        job["error"] = "cancelled"
 
     return jsonify({"status": "cancelled"})
