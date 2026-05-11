@@ -482,7 +482,11 @@ function startProgressMonitoring() {
 // ===== POLLING BACKEND =====
 async function checkProgress() {
   try {
-    const res = await fetch("/status");
+    if (!currentJobId) {
+      throw new Error("Job ID não encontrado.");
+    }
+
+    const res = await fetch(`/status/${currentJobId}`);
 
     if (!res.ok) {
       throw new Error(`Erro HTTP ${res.status} ao consultar progresso.`);
@@ -568,7 +572,7 @@ if (cancelBtn) {
       if (modalAction !== "cancel") return;
 
       try {
-        await fetch("/cancel", { method: "POST" });
+        await fetch(`/cancel/${currentJobId}`, { method: "POST" });
 
         isCancelled = true;
 
@@ -592,7 +596,7 @@ if (cancelBtn) {
   } else {
     cancelBtn.addEventListener("click", async () => {
       try {
-        await fetch("/cancel", { method: "POST" });
+        await fetch(`/cancel/${currentJobId}`, { method: "POST" });
 
         isCancelled = true;
 
@@ -705,7 +709,7 @@ if (returnBtn) {
 
       if (modalAction === "return") {
         try {
-          await fetch("/cancel", { method: "POST" });
+          await fetch(`/cancel/${currentJobId}`, { method: "POST" });
         } catch (e) {}
 
         resetUIToStart();
@@ -721,7 +725,7 @@ if (returnBtn) {
   } else {
     returnBtn.addEventListener("click", async () => {
       try {
-        await fetch("/cancel", { method: "POST" });
+        await fetch(`/cancel/${currentJobId}`, { method: "POST" });
       } catch (e) {}
 
       resetUIToStart();
